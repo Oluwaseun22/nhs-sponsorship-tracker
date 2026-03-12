@@ -1,0 +1,13 @@
+.env
+*.env
+infra/nhs_tracker.zip
+infra/lambda_package/
+infra/out.json
+generated_cvs/
+outputs/
+*.docx
+!src/cv_template.docx
+__pycache__/
+*.pyc
+.DS_Store
+seen_jobs.json
