@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NHS Sponsorship Job Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#f5f6fa;color:#1a1a2e}
+.navbar{background:#005eb8;color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+.navbar h1{font-size:18px;font-weight:600}
+.nhs-logo{background:#fff;color:#005eb8;font-weight:800;padding:2px 8px;border-radius:3px;margin-right:10px;font-size:14px}
+.status{font-size:12px;opacity:.8}
+.live-dot{display:inline-block;width:8px;height:8px;background:#00d084;border-radius:50%;margin-right:6px}
+.refresh-btn{background:#fff;color:#005eb8;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:24px;max-width:1200px;margin:0 auto}
+.metric-card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.metric-card .label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:8px}
+.metric-card .value{font-size:32px;font-weight:700;color:#005eb8}
+.metric-card .sub{font-size:12px;color:#aaa;margin-top:4px}
+.main{display:grid;grid-template-columns:2fr 1fr;gap:16px;padding:0 24px 24px;max-width:1200px;margin:0 auto}
+.card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:16px}
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.filter-btn{padding:5px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:13px}
+.filter-btn.active{background:#005eb8;color:#fff;border-color:#005eb8}
+.job-card{border:1px solid #eee;border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color .2s}
+.job-card:hover{border-color:#005eb8}
+.job-title{font-weight:600;font-size:15px;margin-bottom:4px}
+.job-meta{font-size:12px;color:#888;margin-bottom:8px}
+.job-salary{float:right;font-weight:600;color:#005eb8;font-size:14px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;background:#e8f0fe;color:#005eb8}
+.tag.permanent{background:#e6f4ea;color:#1e7e34}
+.tag.fixed{background:#fff3e0;color:#e65100}
+.tag.closes{background:#fce8e6;color:#c62828}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 24px 24px;max-width:1200px;margin:0 auto}
+.loading{text-align:center;padding:60px;color:#888}
+.error-state{text-align:center;padding:40px;color:#888}
+.error-state h3{margin-bottom:8px;color:#333}
+.error-state code{font-size:12px;background:#f5f5f5;padding:8px 12px;border-radius:6px;display:inline-block;margin:8px 0;color:#005eb8}
+.kw-bar{display:flex;align-items:center;margin-bottom:10px;gap:10px}
+.kw-label{font-size:13px;width:180px;flex-shrink:0}
+.kw-track{flex:1;background:#f0f0f0;border-radius:4px;height:8px}
+.kw-fill{background:#005eb8;border-radius:4px;height:8px}
+.kw-count{font-size:12px;color:#888;width:20px;text-align:right}
+footer{text-align:center;padding:20px;font-size:12px;color:#bbb}
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div><span class="nhs-logo">NHS</span><span style="font-weight:600">Sponsorship Job Tracker</span></div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span class="status"><span class="live-dot"></span>Live · eu-west-2</span>
+    <button class="refresh-btn" onclick="loadData()">Refresh</button>
+  </div>
+</nav>
+
+<div id="loading" class="loading">Loading job data from AWS S3...</div>
+
+<div id="content" style="display:none">
+  <div class="metrics">
+    <div class="metric-card"><div class="label">Total Jobs Found</div><div class="value" id="m-total">0</div><div class="sub">across all scans</div></div>
+    <div class="metric-card"><div class="label">Sponsorship Matches</div><div class="value" id="m-matches">0</div><div class="sub">with CoS keywords</div></div>
+    <div class="metric-card"><div class="label">Last Scan</div><div class="value" id="m-date" style="font-size:20px;padding-top:6px">—</div><div class="sub" id="m-time"></div></div>
+    <div class="metric-card"><div class="label">Unique Employers</div><div class="value" id="m-employers">0</div><div class="sub">NHS trusts &amp; orgs</div></div>
+  </div>
+
+  <div class="main">
+    <div class="card">
+      <h2>Sponsored Roles Found</h2>
+      <div class="filters" id="filters"></div>
+      <div id="job-list"></div>
+    </div>
+    <div class="card">
+      <h2>Sponsorship Keywords Matched</h2>
+      <div id="kw-bars"></div>
+      <h2 style="margin-top:24px">Jobs by Keyword Search</h2>
+      <canvas id="donut-chart" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="charts">
+    <div class="card"><h2>Salary Distribution</h2><canvas id="salary-chart"></canvas></div>
+    <div class="card"><h2>Top Employers Offering Sponsorship</h2><canvas id="employer-chart"></canvas></div>
+  </div>
+</div>
+
+<div id="error-state" class="error-state" style="display:none">
+  <h3>Could not load data from S3</h3>
+  <p>Make sure a scan has run first:</p>
+  <code>aws lambda invoke --function-name nhs-job-tracker --payload '{}' out.json</code>
+  <p style="margin-top:16px">Or paste your job data JSON below:</p>
+  <textarea id="paste-data" style="width:100%;max-width:600px;height:120px;margin-top:12px;padding:8px;font-family:monospace;font-size:12px;border:1px solid #ddd;border-radius:6px;" placeholder='Paste contents of your S3 JSON file here...'></textarea>
+  <br><button onclick="loadPasted()" style="margin-top:8px;padding:8px 20px;background:#005eb8;color:#fff;border:none;border-radius:6px;cursor:pointer">Load Data</button>
+</div>
+
+<footer>NHS Sponsorship Tracker · AWS Lambda + DynamoDB + S3 · eu-west-2 · Built by Segun Toriola</footer>
+
+<script>
+const SPONSORSHIP_KEYWORDS = ['visa sponsorship','certificate of sponsorship','skilled worker visa','tier 2','cos provided','sponsorship available','overseas applicants','work permit','sponsorship considered','eligible for sponsorship'];
+
+let donutChart, salaryChart, employerChart;
+
+async function loadData() {
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('error-state').style.display = 'none';
+  try {
+    const bucket = 'nhs-job-tracker-data';
+    const region = 'eu-west-2';
+    const dataRes = await fetch(`https://d12tf1qc9p6i82.cloudfront.net/nhs_jobs_data/all_jobs.json`);
+    if (!dataRes.ok) throw new Error('Fetch failed');
+    const data = await dataRes.json();
+    renderDashboard(data);
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error-state').style.display = 'block';
+  }
+}
+
+function loadPasted() {
+  try {
+    const data = JSON.parse(document.getElementById('paste-data').value.trim());
+    renderDashboard(data);
+    document.getElementById('error-state').style.display = 'none';
+  } catch(e) { alert('Invalid JSON.'); }
+}
+
+function renderDashboard(data) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+  const jobs = data.jobs || [];
+  const sponsored = jobs.filter(j => j.sponsorship_keywords_found && j.sponsorship_keywords_found.length > 0);
+  const dt = new Date(data.scan_date || Date.now());
+  document.getElementById('m-total').textContent = jobs.length;
+  document.getElementById('m-matches').textContent = sponsored.length;
+  document.getElementById('m-date').textContent = dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  document.getElementById('m-time').textContent = dt.toISOString().substring(11,16) + ' UTC';
+  const employers = new Set(sponsored.map(j=>j.employer).filter(Boolean));
+  document.getElementById('m-employers').textContent = employers.size;
+
+  // Filters
+  const types = ['All', ...new Set(sponsored.map(j=>j.contract_type||'Unknown'))];
+  const filtersEl = document.getElementById('filters');
+  filtersEl.innerHTML = types.map((t,i)=>`<button class="filter-btn${i===0?' active':''}" onclick="filterJobs('${t}',this)">${t} (${t==='All'?sponsored.length:sponsored.filter(j=>(j.contract_type||'Unknown')===t).length})</button>`).join('');
+
+  renderJobs(sponsored, 'All');
+
+  // Keywords
+  const kwCounts = {};
+  SPONSORSHIP_KEYWORDS.forEach(kw => { kwCounts[kw] = sponsored.filter(j=>(j.description||'').toLowerCase().includes(kw)).length; });
+  const topKws = Object.entries(kwCounts).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const max = topKws[0]?.[1] || 1;
+  document.getElementById('kw-bars').innerHTML = topKws.map(([kw,count])=>`<div class="kw-bar"><span class="kw-label">${kw}</span><div class="kw-track"><div class="kw-fill" style="width:${(count/max)*100}%"></div></div><span class="kw-count">${count}</span></div>`).join('');
+
+  // Donut
+  const kwGroups = {};
+  sponsored.forEach(j=>{ const kws = extractKws(j.description||''); kws.forEach(kw=>{ kwGroups[kw]=(kwGroups[kw]||0)+1; }); });
+  const donutData = Object.entries(kwGroups).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(document.getElementById('donut-chart'), { type:'doughnut', data:{ labels:donutData.map(d=>d[0]), datasets:[{data:donutData.map(d=>d[1]),backgroundColor:['#005eb8','#0072ce','#41b6e6','#00a499','#78be20']}]}, options:{plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}} });
+
+  // Salary
+  const bands = {'<20k':0,'20-30k':0,'30-40k':0,'40-50k':0,'50k+':0};
+  sponsored.forEach(j=>{ const s=parseFloat((j.salary||'').replace(/[^0-9.]/g,'')); if(!s)return; if(s<20000)bands['<20k']++; else if(s<30000)bands['20-30k']++; else if(s<40000)bands['30-40k']++; else if(s<50000)bands['40-50k']++; else bands['50k+']++; });
+  if (salaryChart) salaryChart.destroy();
+  salaryChart = new Chart(document.getElementById('salary-chart'), { type:'bar', data:{ labels:Object.keys(bands), datasets:[{data:Object.values(bands),backgroundColor:'#005eb8',borderRadius:4}]}, options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}} });
+
+  // Employers
+  const empCount = {};
+  sponsored.forEach(j=>{ if(j.employer) empCount[j.employer]=(empCount[j.employer]||0)+1; });
+  const topEmps = Object.entries(empCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  if (employerChart) employerChart.destroy();
+  employerChart = new Chart(document.getElementById('employer-chart'), { type:'bar', data:{ labels:topEmps.map(e=>e[0].length>25?e[0].substring(0,25)+'...':e[0]), datasets:[{data:topEmps.map(e=>e[1]),backgroundColor:'#00a499',borderRadius:4}]}, options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}} });
+}
+
+function filterJobs(type, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const jobs = window._allJobs || [];
+  renderJobs(jobs, type);
+}
+
+function renderJobs(jobs, type) {
+  window._allJobs = jobs;
+  const filtered = type === 'All' ? jobs : jobs.filter(j=>(j.contract_type||'Unknown')===type);
+  document.getElementById('job-list').innerHTML = filtered.map(j=>`
+    <div class="job-card" onclick="window.open('${j.url||'#'}','_blank')">
+      <div class="job-salary">${j.salary||'Salary not listed'}</div>
+      <div class="job-title">${j.title||'Unknown Role'}</div>
+      <div class="job-meta">${j.employer||''} · ${j.location||''}</div>
+      <div class="tags">
+        ${j.contract_type?`<span class="tag ${(j.contract_type||'').toLowerCase()}">${j.contract_type}</span>`:''}
+        ${extractKws(j.description||'').slice(0,2).map(kw=>`<span class="tag">${kw}</span>`).join('')}
+        ${j.closing_date?`<span class="tag closes">Closes ${j.closing_date}</span>`:''}
+      </div>
+    </div>`).join('') || '<p style="color:#aaa;text-align:center;padding:20px">No jobs match this filter</p>';
+}
+
+function extractKws(text) {
+  const lower = text.toLowerCase();
+  return SPONSORSHIP_KEYWORDS.filter(kw=>lower.includes(kw));
+}
+
+loadData();
+</script>
+</body>
+</html>
