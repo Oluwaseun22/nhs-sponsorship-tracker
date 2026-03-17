@@ -30,7 +30,7 @@ Python · AWS Lambda · DynamoDB · S3 · SES · EventBridge · python-docx
 
 ## Dashboard
 
-Live at: http://nhs-job-tracker-data.s3-website.eu-west-2.amazonaws.com/nhs_dashboard.html
+Live at: https://d12tf1qc9p6i82.cloudfront.net/nhs_dashboard.html
 
 ## Author
 
